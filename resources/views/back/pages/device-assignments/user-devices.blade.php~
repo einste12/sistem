@@ -1,0 +1,663 @@
+@extends('back.layouts.master')
+
+@section('styles')
+    <style>
+        .device-card {
+            transition: all 0.3s;
+            margin-bottom: 20px;
+            height: 100%;
+        }
+        .device-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+        }
+        .device-card .card-header {
+            position: relative;
+            overflow: hidden;
+        }
+        .device-status {
+            position: absolute;
+            right: 1rem;
+            top: 1rem;
+        }
+        .device-info {
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        .device-info i {
+            width: 20px;
+            text-align: center;
+            margin-right: 5px;
+            color: #4e73df;
+        }
+        .device-value {
+            font-size: 2rem;
+            font-weight: bold;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .device-value.temperature {
+            color: #e74a3b;
+        }
+        .device-value.humidity {
+            color: #36b9cc;
+        }
+        .battery-indicator {
+            width: 100%;
+            height: 5px;
+            background-color: #e9ecef;
+            border-radius: 2px;
+            margin-top: 5px;
+            position: relative;
+            overflow: hidden;
+        }
+        .battery-level {
+            height: 100%;
+            border-radius: 2px;
+            background-color: #4CAF50;
+            transition: width 0.3s ease-in-out;
+        }
+        .battery-low {
+            background-color: #f44336;
+        }
+        .battery-medium {
+            background-color: #FF9800;
+        }
+        .device-type-badge {
+            position: absolute;
+            left: 1rem;
+            top: 1rem;
+        }
+        .sensor-value {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            width: 120px;
+            height: 120px;
+            margin: 0 auto;
+            border: 3px solid #f8f9fc;
+            box-shadow: 0 0 15px rgba(0,0,0,0.1);
+        }
+        .sensor-value .label {
+            font-size: 12px;
+            color: #858796;
+        }
+        .sensor-value .value {
+            font-size: 24px;
+            font-weight: bold;
+        }
+        .actuator-control {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .switch-control {
+            display: inline-block;
+            position: relative;
+            width: 60px;
+            height: 34px;
+            margin: 10px 0;
+        }
+        .switch-control input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider {
+            background-color: #4CAF50;
+        }
+        input:focus + .slider {
+            box-shadow: 0 0 1px #4CAF50;
+        }
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+        .status-text {
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        .device-tabs {
+            margin-bottom: 20px;
+        }
+        .device-tabs .nav-link {
+            border: none;
+            color: #5a5c69;
+            padding: 10px 20px;
+            font-weight: 600;
+        }
+        .device-tabs .nav-link.active {
+            color: #4e73df;
+            border-bottom: 3px solid #4e73df;
+            background-color: transparent;
+        }
+        .no-devices {
+            text-align: center;
+            padding: 40px 0;
+        }
+        .no-devices i {
+            font-size: 48px;
+            color: #d1d3e2;
+            margin-bottom: 20px;
+        }
+    </style>
+    @section('scripts')
+        <script>
+            $(document).ready(function() {
+                // Cihaz arama işlevi
+                $('#deviceSearch').on('keyup', function() {
+                    let searchText = $(this).val().toLowerCase();
+                    let visibleCount = 0;
+
+                    $('.device-item').each(function() {
+                        let deviceName = $(this).data('name');
+                        let deviceType = $(this).data('type');
+                        let deviceEui = $(this).data('eui');
+
+                        if (deviceName.includes(searchText) || deviceType.includes(searchText) || deviceEui.includes(searchText)) {
+                            $(this).show();
+                            visibleCount++;
+                        } else {
+                            $(this).hide();
+                        }
+                    });
+
+                    // Sonuç yoksa mesaj göster
+                    if (visibleCount === 0) {
+                        $('.no-results').show();
+                    } else {
+                        $('.no-results').hide();
+                    }
+                });
+
+                // Dijital çıkış kontrolü
+                $('.output-control').change(function() {
+                    let deviceId = $(this).data('device');
+                    let output = $(this).data('output');
+                    let isChecked = $(this).is(':checked');
+                    let statusText = isChecked ? 'Açık' : 'Kapalı';
+
+                    // Durum metnini güncelle
+                    $(`#output${output}-status-${deviceId}`).text(statusText);
+
+                    // AJAX isteği ile cihaz çıkışını kontrol et
+                    $.ajax({
+                        url: "{{ route('admin.lora.devices.toggle-output', ':id') }}".replace(':id', deviceId),
+                        type: 'POST',
+                        data: {
+                            output: output,
+                            value: isChecked ? 1 : 0,
+                            _token: "{{ csrf_token() }}"
+                        },
+                        success: function(response) {
+                            console.log('Çıkış durumu güncellendi:', response);
+
+                            // Opsiyonel: Başarı mesajı göster
+                            let alertHtml = `<div class="alert alert-success alert-dismissible fade show" role="alert">
+                        ${response.message}
+                        <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                        </button>
+                        </div>`;
+
+                            $('.container-fluid').prepend(alertHtml);
+
+                            // 3 saniye sonra mesajı kaldır
+                            setTimeout(function() {
+                                $('.alert').alert('close');
+                            }, 3000);
+                        },
+                        error: function(xhr, status, error) {
+                            console.error('Hata:', error);
+
+                            // Hata durumunda eski haline getir
+                            $(this).prop('checked', !isChecked);
+                            $(`#output${output}-status-${deviceId}`).text(isChecked ? 'Kapalı' : 'Açık');
+
+                            // Hata mesajı göster
+                            alert('İşlem gerçekleştirilemedi: ' + (xhr.responseJSON ? xhr.responseJSON.message : error));
+                        }
+                    });
+                });
+
+                // Sekme değiştiğinde URL'yi güncelle
+                $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+                    let id = $(e.target).attr('href').substr(1);
+                    history.replaceState(null, null, `?tab=${id}`);
+                });
+
+                // Sayfa yüklendiğinde URL'deki sekmeyi aç
+                let urlParams = new URLSearchParams(window.location.search);
+                let tab = urlParams.get('tab');
+                if (tab) {
+                    $(`#${tab}-tab`).tab('show');
+                }
+            });
+        </script>
+    @endsection
+
+    @section('content')
+        <div class="container-fluid">
+            <!-- Başlık -->
+            <div class="d-sm-flex align-items-center justify-content-between mb-4">
+                <h1 class="h3 mb-0 text-gray-800">Cihazlarım</h1>
+            </div>
+
+            @if(session('success'))
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    {{ session('success') }}
+                    <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+            @endif
+
+            @if($devices->isEmpty())
+                <div class="card shadow mb-4">
+                    <div class="card-body">
+                        <div class="no-devices">
+                            <i class="fas fa-microchip"></i>
+                            <h4 class="mb-3">Henüz cihazınız bulunmuyor</h4>
+                            <p class="text-muted mb-4">Size henüz atanmış cihaz bulunmamaktadır. Cihaz atama işlemleri için sistem yöneticinize başvurun.</p>
+                        </div>
+                    </div>
+                </div>
+            @else
+                <!-- Cihaz Tipleri Sekmeleri -->
+                <ul class="nav nav-tabs device-tabs" id="deviceTypeTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <a class="nav-link active" id="all-tab" data-toggle="tab" href="#all" role="tab" aria-controls="all" aria-selected="true">
+                            <i class="fas fa-microchip mr-1"></i> Tüm Cihazlar <span class="badge badge-primary">{{ $devices->count() }}</span>
+                        </a>
+                    </li>
+                    @if($devices->where('device_type', 'sensor')->count() > 0)
+                        <li class="nav-item" role="presentation">
+                            <a class="nav-link" id="sensors-tab" data-toggle="tab" href="#sensors" role="tab" aria-controls="sensors" aria-selected="false">
+                                <i class="fas fa-thermometer-half mr-1"></i> Sensörler <span class="badge badge-info">{{ $devices->where('device_type', 'sensor')->count() }}</span>
+                            </a>
+                        </li>
+                    @endif
+                    @if($devices->where('device_type', 'actuator')->count() > 0)
+                        <li class="nav-item" role="presentation">
+                            <a class="nav-link" id="actuators-tab" data-toggle="tab" href="#actuators" role="tab" aria-controls="actuators" aria-selected="false">
+                                <i class="fas fa-cogs mr-1"></i> Aktüatörler <span class="badge badge-warning">{{ $devices->where('device_type', 'actuator')->count() }}</span>
+                            </a>
+                        </li>
+                    @endif
+                    <li class="nav-item ml-auto" role="presentation">
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="deviceSearch" placeholder="Cihaz ara...">
+                            <div class="input-group-append">
+                                <span class="input-group-text"><i class="fas fa-search"></i></span>
+                            </div>
+                        </div>
+                    </li>
+                </ul>
+
+                <!-- Cihaz Sekme İçerikleri -->
+                <div class="tab-content" id="deviceTypeTabsContent">
+                    <!-- Tüm Cihazlar -->
+                    <div class="tab-pane fade show active" id="all" role="tabpanel" aria-labelledby="all-tab">
+                        <div class="row device-container">
+                            @foreach($devices as $device)
+                                <div class="col-lg-4 col-md-6 device-item"
+                                     data-name="{{ strtolower($device->name) }}"
+                                     data-type="{{ strtolower($device->device_type) }}"
+                                     data-eui="{{ strtolower($device->dev_eui) }}">
+                                    <div class="card shadow device-card">
+                                        <div class="card-header py-3">
+                                            <h6 class="m-0 font-weight-bold text-primary">{{ $device->name }}</h6>
+
+                                            <div class="device-type-badge">
+                                                @if($device->device_type == 'sensor')
+                                                    <span class="badge badge-info">Sensör</span>
+                                                @elseif($device->device_type == 'actuator')
+                                                    <span class="badge badge-warning">Aktüatör</span>
+                                                @else
+                                                    <span class="badge badge-secondary">{{ $device->device_type }}</span>
+                                                @endif
+                                            </div>
+
+                                            <div class="device-status">
+                                                @if($device->status == 'online')
+                                                    <span class="badge badge-success">Çevrimiçi</span>
+                                                @elseif($device->status == 'offline')
+                                                    <span class="badge badge-danger">Çevrimdışı</span>
+                                                @else
+                                                    <span class="badge badge-warning">Bakımda</span>
+                                                @endif
+                                            </div>
+                                        </div>
+                                        <div class="card-body">
+                                            <!-- Cihaz Detayları -->
+                                            <div class="device-info">
+                                                <p><i class="fas fa-microchip"></i> <strong>Model:</strong> {{ $device->model ?: 'Belirtilmemiş' }}</p>
+                                                <p><i class="fas fa-fingerprint"></i> <strong>DEV EUI:</strong> <code>{{ $device->dev_eui }}</code></p>
+
+                                                @if($device->last_seen)
+                                                    <p><i class="fas fa-clock"></i> <strong>Son Görülme:</strong> {{ $device->last_seen->diffForHumans() }}</p>
+                                                @endif
+
+                                                <!-- Pil Seviyesi -->
+                                                @if($device->battery_level !== null)
+                                                    <p>
+                                                        <i class="fas fa-battery-half"></i> <strong>Pil:</strong> {{ $device->battery_level }}%
+                                                    <div class="battery-indicator">
+                                                        <div class="battery-level @if($device->battery_level < 20) battery-low @elseif($device->battery_level < 50) battery-medium @endif" style="width: {{ $device->battery_level }}%;"></div>
+                                                    </div>
+                                                    </p>
+                                                @endif
+                                            </div>
+
+                                            <!-- Sensör Verileri -->
+                                            @if($device->device_type == 'sensor')
+                                                <div class="row">
+                                                    @if($device->temperature !== null)
+                                                        <div class="col-6">
+                                                            <div class="sensor-value">
+                                                                <span class="label">Sıcaklık</span>
+                                                                <span class="value temperature">{{ number_format($device->temperature, 1) }}°C</span>
+                                                            </div>
+                                                        </div>
+                                                    @endif
+
+                                                    @if($device->humidity !== null)
+                                                        <div class="col-6">
+                                                            <div class="sensor-value">
+                                                                <span class="label">Nem</span>
+                                                                <span class="value humidity">{{ number_format($device->humidity, 1) }}%</span>
+                                                            </div>
+                                                        </div>
+                                                    @endif
+                                                </div>
+
+                                                <!-- Dijital Girişler -->
+                                                @if($device->digital_input_1 !== null || $device->digital_input_2 !== null || $device->digital_input_3 !== null)
+                                                    <div class="mt-3 pt-3 border-top">
+                                                        <h6 class="mb-3">Dijital Girişler</h6>
+                                                        <div class="row">
+                                                            @if($device->digital_input_1 !== null)
+                                                                <div class="col-md-4 text-center">
+                                                                    <strong>Giriş 1:</strong>
+                                                                    <br>
+                                                                    @if($device->digital_input_1)
+                                                                        <span class="badge badge-success">Aktif</span>
+                                                                    @else
+                                                                        <span class="badge badge-secondary">Pasif</span>
+                                                                    @endif
+                                                                </div>
+                                                            @endif
+
+                                                            @if($device->digital_input_2 !== null)
+                                                                <div class="col-md-4 text-center">
+                                                                    <strong>Giriş 2:</strong>
+                                                                    <br>
+                                                                    @if($device->digital_input_2)
+                                                                        <span class="badge badge-success">Aktif</span>
+                                                                    @else
+                                                                        <span class="badge badge-secondary">Pasif</span>
+                                                                    @endif
+                                                                </div>
+                                                            @endif
+
+                                                            @if($device->digital_input_3 !== null)
+                                                                <div class="col-md-4 text-center">
+                                                                    <strong>Giriş 3:</strong>
+                                                                    <br>
+                                                                    @if($device->digital_input_3)
+                                                                        <span class="badge badge-success">Aktif</span>
+                                                                    @else
+                                                                        <span class="badge badge-secondary">Pasif</span>
+                                                                    @endif
+                                                                </div>
+                                                            @endif
+                                                        </div>
+                                                    </div>
+                                                @endif
+
+                                                <!-- Aktüatör Kontrolleri -->
+                                            @elseif($device->device_type == 'actuator')
+                                                <div class="mt-3">
+                                                    <h6 class="mb-3 text-center">Çıkış Kontrolleri</h6>
+                                                    <div class="row">
+                                                        @if($device->digital_output_1 !== null)
+                                                            <div class="col-md-6">
+                                                                <div class="actuator-control">
+                                                                    <strong>Çıkış 1</strong>
+                                                                    <label class="switch-control">
+                                                                        <input type="checkbox" class="output-control" data-device="{{ $device->id }}" data-output="1" {{ $device->digital_output_1 ? 'checked' : '' }}>
+                                                                        <span class="slider"></span>
+                                                                    </label>
+                                                                    <span class="status-text" id="output1-status-{{ $device->id }}">{{ $device->digital_output_1 ? 'Açık' : 'Kapalı' }}</span>
+                                                                </div>
+                                                            </div>
+                                                        @endif
+
+                                                        @if($device->digital_output_2 !== null)
+                                                            <div class="col-md-6">
+                                                                <div class="actuator-control">
+                                                                    <strong>Çıkış 2</strong>
+                                                                    <label class="switch-control">
+                                                                        <input type="checkbox" class="output-control" data-device="{{ $device->id }}" data-output="2" {{ $device->digital_output_2 ? 'checked' : '' }}>
+                                                                        <span class="slider"></span>
+                                                                    </label>
+                                                                    <span class="status-text" id="output2-status-{{ $device->id }}">{{ $device->digital_output_2 ? 'Açık' : 'Kapalı' }}</span>
+                                                                </div>
+                                                            </div>
+                                                        @endif
+                                                    </div>
+                                                </div>
+                                            @endif
+                                        </div>
+                                        <div class="card-footer">
+                                            <a href="{{ route('admin.lora.devices.show', $device->id) }}" class="btn btn-sm btn-info">
+                                                <i class="fas fa-eye"></i> Detaylar
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+
+                        <div class="no-results" style="display: none;">
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle mr-1"></i> Arama kriterlerine uygun cihaz bulunamadı.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sensörler -->
+                    <div class="tab-pane fade" id="sensors" role="tabpanel" aria-labelledby="sensors-tab">
+                        <div class="row device-container">
+                            @foreach($devices->where('device_type', 'sensor') as $device)
+                                <div class="col-lg-4 col-md-6 device-item"
+                                     data-name="{{ strtolower($device->name) }}"
+                                     data-type="{{ strtolower($device->device_type) }}"
+                                     data-eui="{{ strtolower($device->dev_eui) }}">
+                                    <div class="card shadow device-card">
+                                        <div class="card-header py-3">
+                                            <h6 class="m-0 font-weight-bold text-primary">{{ $device->name }}</h6>
+
+                                            <div class="device-type-badge">
+                                                <span class="badge badge-info">Sensör</span>
+                                            </div>
+
+                                            <div class="device-status">
+                                                @if($device->status == 'online')
+                                                    <span class="badge badge-success">Çevrimiçi</span>
+                                                @elseif($device->status == 'offline')
+                                                    <span class="badge badge-danger">Çevrimdışı</span>
+                                                @else
+                                                    <span class="badge badge-warning">Bakımda</span>
+                                                @endif
+                                            </div>
+                                        </div>
+                                        <div class="card-body">
+                                            <!-- Cihaz Detayları -->
+                                            <div class="device-info">
+                                                <p><i class="fas fa-microchip"></i> <strong>Model:</strong> {{ $device->model ?: 'Belirtilmemiş' }}</p>
+                                                <p><i class="fas fa-fingerprint"></i> <strong>DEV EUI:</strong> <code>{{ $device->dev_eui }}</code></p>
+
+                                                @if($device->last_seen)
+                                                    <p><i class="fas fa-clock"></i> <strong>Son Görülme:</strong> {{ $device->last_seen->diffForHumans() }}</p>
+                                                @endif
+
+                                                <!-- Pil Seviyesi -->
+                                                @if($device->battery_level !== null)
+                                                    <p>
+                                                        <i class="fas fa-battery-half"></i> <strong>Pil:</strong> {{ $device->battery_level }}%
+                                                    <div class="battery-indicator">
+                                                        <div class="battery-level @if($device->battery_level < 20) battery-low @elseif($device->battery_level < 50) battery-medium @endif" style="width: {{ $device->battery_level }}%;"></div>
+                                                    </div>
+                                                    </p>
+                                                @endif
+                                            </div>
+
+                                            <!-- Sensör Verileri -->
+                                            <div class="row">
+                                                @if($device->temperature !== null)
+                                                    <div class="col-6">
+                                                        <div class="sensor-value">
+                                                            <span class="label">Sıcaklık</span>
+                                                            <span class="value temperature">{{ number_format($device->temperature, 1) }}°C</span>
+                                                        </div>
+                                                    </div>
+                                                @endif
+
+                                                @if($device->humidity !== null)
+                                                    <div class="col-6">
+                                                        <div class="sensor-value">
+                                                            <span class="label">Nem</span>
+                                                            <span class="value humidity">{{ number_format($device->humidity, 1) }}%</span>
+                                                        </div>
+                                                    </div>
+                                                @endif
+                                            </div>
+                                        </div>
+                                        <div class="card-footer">
+                                            <a href="{{ route('admin.lora.devices.show', $device->id) }}" class="btn btn-sm btn-info">
+                                                <i class="fas fa-eye"></i> Detaylar
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+
+                    <!-- Aktüatörler -->
+                    <div class="tab-pane fade" id="actuators" role="tabpanel" aria-labelledby="actuators-tab">
+                        <div class="row device-container">
+                            @foreach($devices->where('device_type', 'actuator') as $device)
+                                <div class="col-lg-4 col-md-6 device-item"
+                                     data-name="{{ strtolower($device->name) }}"
+                                     data-type="{{ strtolower($device->device_type) }}"
+                                     data-eui="{{ strtolower($device->dev_eui) }}">
+                                    <div class="card shadow device-card">
+                                        <div class="card-header py-3">
+                                            <h6 class="m-0 font-weight-bold text-primary">{{ $device->name }}</h6>
+
+                                            <div class="device-type-badge">
+                                                <span class="badge badge-warning">Aktüatör</span>
+                                            </div>
+
+                                            <div class="device-status">
+                                                @if($device->status == 'online')
+                                                    <span class="badge badge-success">Çevrimiçi</span>
+                                                @elseif($device->status == 'offline')
+                                                    <span class="badge badge-danger">Çevrimdışı</span>
+                                                @else
+                                                    <span class="badge badge-warning">Bakımda</span>
+                                                @endif
+                                            </div>
+                                        </div>
+                                        <div class="card-body">
+                                            <!-- Cihaz Detayları -->
+                                            <div class="device-info">
+                                                <p><i class="fas fa-microchip"></i> <strong>Model:</strong> {{ $device->model ?: 'Belirtilmemiş' }}</p>
+                                                <p><i class="fas fa-fingerprint"></i> <strong>DEV EUI:</strong> <code>{{ $device->dev_eui }}</code></p>
+
+                                                @if($device->last_seen)
+                                                    <p><i class="fas fa-clock"></i> <strong>Son Görülme:</strong> {{ $device->last_seen->diffForHumans() }}</p>
+                                                @endif
+
+                                                <!-- Pil Seviyesi -->
+                                                @if($device->battery_level !== null)
+                                                    <p>
+                                                        <i class="fas fa-battery-half"></i> <strong>Pil:</strong> {{ $device->battery_level }}%
+                                                    <div class="battery-indicator">
+                                                        <div class="battery-level @if($device->battery_level < 20) battery-low @elseif($device->battery_level < 50) battery-medium @endif" style="width: {{ $device->battery_level }}%;"></div>
+                                                    </div>
+                                                    </p>
+                                                @endif
+                                            </div>
+
+                                            <!-- Aktüatör Kontrolleri -->
+                                            <div class="mt-3">
+                                                <h6 class="mb-3 text-center">Çıkış Kontrolleri</h6>
+                                                <div class="row">
+                                                    @if($device->digital_output_1 !== null)
+                                                        <div class="col-md-6">
+                                                            <div class="actuator-control">
+                                                                <strong>Çıkış 1</strong>
+                                                                <label class="switch-control">
+                                                                    <input type="checkbox" class="output-control" data-device="{{ $device->id }}" data-output="1" {{ $device->digital_output_1 ? 'checked' : '' }}>
+                                                                    <span class="slider"></span>
+                                                                </label>
+                                                                <span class="status-text" id="output1-status-{{ $device->id }}">{{ $device->digital_output_1 ? 'Açık' : 'Kapalı' }}</span>
+                                                            </div>
+                                                        </div>
+                                                    @endif
+
+                                                    @if($device->digital_output_2 !== null)
+                                                        <div class="col-md-6">
+                                                            <div class="actuator-control">
+                                                                <strong>Çıkış 2</strong>
+                                                                <label class="switch-control">
+                                                                    <input type="checkbox" class="output-control" data-device="{{ $device->id }}" data-output="2" {{ $device->digital_output_2 ? 'checked' : '' }}>
+                                                                    <span class="slider"></span>
+                                                                </label>
+                                                                <span class="status-text" id="output2-status-{{ $device->id }}">{{ $device->digital_output_2 ? 'Açık' : 'Kapalı' }}</span>
+                                                            </div>
+                                                        </div>
+                                                    @endif
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="card-footer">
+                                            <a href="{{ route('admin.lora.devices.show', $device->id) }}" class="btn btn-sm btn-info">
+                                                <i class="fas fa-eye"></i> Detaylar
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                </div>
+            @endif
+        </div>
+    @endsection

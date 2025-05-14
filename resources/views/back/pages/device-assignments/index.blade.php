@@ -1,0 +1,264 @@
+@extends('back.layouts.master')
+
+@section('styles')
+    <!-- DataTables CSS -->
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap4.min.css">
+    <style>
+        .assignment-card {
+            transition: all 0.3s;
+        }
+        .assignment-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+        }
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background-color: #4e73df;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+    </style>
+@endsection
+
+@section('content')
+    <div class="container-fluid">
+        <!-- Başlık -->
+        <div class="d-sm-flex align-items-center justify-content-between mb-4">
+            <h1 class="h3 mb-0 text-gray-800">Cihaz Atamaları</h1>
+            <a href="{{ route('admin.device-assignments.create') }}" class="btn btn-primary btn-sm">
+                <i class="fas fa-plus"></i> Yeni Cihaz Ataması
+            </a>
+        </div>
+
+        <!-- Özet İstatistikler -->
+        <div class="row mb-4">
+            <div class="col-xl-4 col-md-6 mb-4">
+                <div class="card border-left-primary shadow h-100 py-2 assignment-card">
+                    <div class="card-body">
+                        <div class="row no-gutters align-items-center">
+                            <div class="col mr-2">
+                                <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Toplam Kullanıcı</div>
+                                <div class="h5 mb-0 font-weight-bold text-gray-800">{{ $users->count() }}</div>
+                            </div>
+                            <div class="col-auto">
+                                <i class="fas fa-users fa-2x text-gray-300"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-xl-4 col-md-6 mb-4">
+                <div class="card border-left-success shadow h-100 py-2 assignment-card">
+                    <div class="card-body">
+                        <div class="row no-gutters align-items-center">
+                            <div class="col mr-2">
+                                <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Atanmış Cihazlar</div>
+                                <div class="h5 mb-0 font-weight-bold text-gray-800">{{ $assignedDevices->count() }}</div>
+                            </div>
+                            <div class="col-auto">
+                                <i class="fas fa-link fa-2x text-gray-300"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-xl-4 col-md-6 mb-4">
+                <div class="card border-left-warning shadow h-100 py-2 assignment-card">
+                    <div class="card-body">
+                        <div class="row no-gutters align-items-center">
+                            <div class="col mr-2">
+                                <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">Atanmamış Cihazlar</div>
+                                <div class="h5 mb-0 font-weight-bold text-gray-800">{{ $unassignedDevices->count() }}</div>
+                            </div>
+                            <div class="col-auto">
+                                <i class="fas fa-unlink fa-2x text-gray-300"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Kullanıcı ve Cihaz Atamaları -->
+        <div class="card shadow mb-4">
+            <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                <h6 class="m-0 font-weight-bold text-primary">Kullanıcılara Atanmış Cihazlar</h6>
+            </div>
+            <div class="card-body">
+                @if(session('success'))
+                    <div class="alert alert-success">
+                        {{ session('success') }}
+                    </div>
+                @endif
+
+                @if($assignedDevices->isNotEmpty())
+                    <div class="table-responsive">
+                        <table class="table table-bordered" id="assignments-table" width="100%" cellspacing="0">
+                            <thead>
+                            <tr>
+                                <th>Kullanıcı</th>
+                                <th>Cihaz Adı</th>
+                                <th>Cihaz Tipi</th>
+                                <th>DEV EUI</th>
+                                <th>Durum</th>
+                                <th>İşlemler</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            @foreach($assignedDevices as $device)
+                                <tr>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <div class="user-avatar mr-2">
+                                                {{ strtoupper(substr($device->user->name, 0, 1)) }}
+                                            </div>
+                                            <div>
+                                                {{ $device->user->name }}
+                                                <div class="small text-muted">{{ $device->user->email }}</div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>{{ $device->name }}</td>
+                                    <td>
+                                        @if($device->device_type == 'sensor')
+                                            <span class="badge badge-info">Sensör</span>
+                                        @elseif($device->device_type == 'actuator')
+                                            <span class="badge badge-warning">Aktüatör</span>
+                                        @else
+                                            <span class="badge badge-secondary">{{ $device->device_type }}</span>
+                                        @endif
+                                    </td>
+                                    <td><code>{{ $device->dev_eui }}</code></td>
+                                    <td>
+                                        @if($device->status == 'online')
+                                            <span class="badge badge-success">Çevrimiçi</span>
+                                        @elseif($device->status == 'offline')
+                                            <span class="badge badge-danger">Çevrimdışı</span>
+                                        @else
+                                            <span class="badge badge-warning">Bakımda</span>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        <a href="{{ route('admin.lora.devices.show', $device->id) }}" class="btn btn-info btn-sm">
+                                            <i class="fas fa-eye"></i>
+                                        </a>
+                                        <a href="{{ route('admin.device-assignments.edit', $device->user->id) }}" class="btn btn-primary btn-sm">
+                                            <i class="fas fa-edit"></i>
+                                        </a>
+                                        <form action="{{ route('admin.device-assignments.destroy', $device->id) }}" method="POST" class="d-inline">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Bu cihaz atamasını kaldırmak istediğinize emin misiniz?')">
+                                                <i class="fas fa-unlink"></i>
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @else
+                    <div class="alert alert-info">
+                        Henüz hiçbir cihaz kullanıcılara atanmamış.
+                    </div>
+                @endif
+            </div>
+        </div>
+
+        <!-- Atanmamış Cihazlar -->
+        <div class="card shadow mb-4">
+            <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                <h6 class="m-0 font-weight-bold text-primary">Atanmamış Cihazlar</h6>
+                <a href="{{ route('admin.device-assignments.create') }}" class="btn btn-primary btn-sm">
+                    <i class="fas fa-plus"></i> Yeni Atama Yap
+                </a>
+            </div>
+            <div class="card-body">
+                @if($unassignedDevices->isNotEmpty())
+                    <div class="table-responsive">
+                        <table class="table table-bordered" id="unassigned-table" width="100%" cellspacing="0">
+                            <thead>
+                            <tr>
+                                <th>Cihaz Adı</th>
+                                <th>Cihaz Tipi</th>
+                                <th>DEV EUI</th>
+                                <th>Durum</th>
+                                <th>İşlemler</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            @foreach($unassignedDevices as $device)
+                                <tr>
+                                    <td>{{ $device->name }}</td>
+                                    <td>
+                                        @if($device->device_type == 'sensor')
+                                            <span class="badge badge-info">Sensör</span>
+                                        @elseif($device->device_type == 'actuator')
+                                            <span class="badge badge-warning">Aktüatör</span>
+                                        @else
+                                            <span class="badge badge-secondary">{{ $device->device_type }}</span>
+                                        @endif
+                                    </td>
+                                    <td><code>{{ $device->dev_eui }}</code></td>
+                                    <td>
+                                        @if($device->status == 'online')
+                                            <span class="badge badge-success">Çevrimiçi</span>
+                                        @elseif($device->status == 'offline')
+                                            <span class="badge badge-danger">Çevrimdışı</span>
+                                        @else
+                                            <span class="badge badge-warning">Bakımda</span>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        <a href="{{ route('admin.lora.devices.show', $device->id) }}" class="btn btn-info btn-sm">
+                                            <i class="fas fa-eye"></i>
+                                        </a>
+                                        <a href="{{ route('admin.device-assignments.create') }}?device_id={{ $device->id }}" class="btn btn-success btn-sm">
+                                            <i class="fas fa-user-plus"></i> Ata
+                                        </a>
+                                    </td>
+                                </tr>
+                            @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @else
+                    <div class="alert alert-warning">
+                        Atanmamış cihaz bulunmamaktadır.
+                    </div>
+                @endif
+            </div>
+        </div>
+    </div>
+@endsection
+
+@section('js')
+    <!-- DataTables JavaScript -->
+    <script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap4.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            $('#assignments-table').DataTable({
+                "language": {
+                    "url": "//cdn.datatables.net/plug-ins/1.11.5/i18n/tr.json"
+                },
+                "order": [[ 0, "asc" ]]
+            });
+
+            $('#unassigned-table').DataTable({
+                "language": {
+                    "url": "//cdn.datatables.net/plug-ins/1.11.5/i18n/tr.json"
+                },
+                "order": [[ 0, "asc" ]]
+            });
+        });
+    </script>
+@endsection

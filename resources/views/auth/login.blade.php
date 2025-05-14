@@ -1,0 +1,50 @@
+@extends('auth.layouts.master')
+@section('title','Giriş Yap')
+@section('content')
+<div class="container">
+    <div class="main-content d-flex flex-column p-0">
+        <div class="m-auto m-1230">
+            <div class="row align-items-center">
+                <div class="col-lg-6 d-none d-lg-block">
+                    <img src="{{asset('assets/images/login.jpg')}}" class="rounded-3" alt="login">
+                </div>
+                <div class="col-lg-6">
+                    <div class="mw-480 ms-lg-auto">
+                        <div class="d-inline-block mb-4">
+                            <a class="d-flex align-items-center text-decoration-none position-relative">
+                                <img src="{{asset('assets/images/logo-icon.png')}}" width="30px" alt="logo-icon">&nbsp;
+                                <span class="logo-text fw-bold text-dark fs-3">SİSTEM</span>
+                            </a>
+                        </div>
+                        <h3 class="fs-28 mb-2">Tekrar Hoşgeldiniz!</h3>
+                        <form method="POST" action="{{route('login.post')}}">
+                            @csrf
+                            <div class="form-group mb-4">
+                                <label class="label text-secondary">E-posta Adresi</label>
+                                <input type="email" name="email" class="form-control h-55 @error('email') is-invalid @enderror" placeholder="E-posta Adresi" value="{{old('email')}}" required>
+                                @error('email')
+                                  <div class="invalid-feedback d-block text-danger f-11">{{ $message }}</div>
+                                @enderror
+                            </div>
+                            <div class="form-group mb-4">
+                                <label class="label text-secondary">Şifre</label>
+                                <input type="password" name="password" class="form-control h-55  @error('password') is-invalid @enderror" placeholder="Şifre" value="{{old('password')}}" required>
+                                @error('password')
+                                  <div class="invalid-feedback d-block text-danger f-11">{{ $message }}</div>
+                                @enderror
+                            </div>
+                            <div class="form-group mb-4">
+                                <button type="submit" class="btn btn-primary fw-medium py-2 px-3 w-100">
+                                    <div class="d-flex align-items-center justify-content-center py-1">
+                                        <span>Giriş Yap</span>
+                                    </div>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+@endsection

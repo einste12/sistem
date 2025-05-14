@@ -1,0 +1,166 @@
+<?php
+
+namespace App\Http\Controllers\Back;
+
+use App\Http\Controllers\Controller;
+use App\Models\LoraDevice;
+use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+
+class DeviceAssignmentController extends Controller
+{
+    /**
+     * Constructor
+     */
+    public function __construct()
+    {
+        $this->middleware(['auth', 'role:Admin']);
+    }
+
+    /**
+     * Kullanıcılara atanabilecek cihazların listesini göster
+     */
+    public function index()
+    {
+        // Tüm kullanıcıları getir (Admin rolüne sahip olmayanlar)
+        $users = User::whereDoesntHave('roles', function ($query) {
+            $query->where('name', 'Admin');
+        })->get();
+
+        // Tüm cihazları getir
+        $assignedDevices = LoraDevice::whereNotNull('user_id')->with('user')->get();
+
+        // Atanmamış cihazları getir
+        $unassignedDevices = LoraDevice::whereNull('user_id')->get();
+
+        return view('back.pages.device-assignments.index', compact('users', 'assignedDevices', 'unassignedDevices'));
+    }
+
+    /**
+     * Yeni bir cihaz atama formu göster
+     */
+    public function create()
+    {
+        // Kullanıcıları getir (Admin rolüne sahip olmayanlar)
+        $users = User::whereDoesntHave('roles', function ($query) {
+            $query->where('name', 'Admin');
+        })->get();
+
+        // Atanmamış cihazları getir
+        $devices = LoraDevice::whereNull('user_id')->get();
+
+        return view('back.pages.device-assignments.create', compact('users', 'devices'));
+    }
+
+    /**
+     * Yeni cihaz ataması kaydet
+     */
+    public function store(Request $request)
+    {
+        $request->validate([
+            'user_id' => 'required|exists:users,id',
+            'device_ids' => 'required|array',
+            'device_ids.*' => 'exists:lora_devices,id'
+        ]);
+
+        $user = User::findOrFail($request->user_id);
+
+        foreach ($request->device_ids as $deviceId) {
+            $device = LoraDevice::findOrFail($deviceId);
+
+            // Cihaz başka bir kullanıcıya atanmışsa atlamaya devam et
+            if ($device->user_id !== null) {
+                continue;
+            }
+
+            // Cihazı kullanıcıya ata
+            $device->user_id = $user->id;
+            $device->save();
+        }
+
+        return redirect()->route('admin.device-assignments.index')
+            ->with('success', 'Cihazlar kullanıcıya başarıyla atandı.');
+    }
+
+    /**
+     * Belirli bir kullanıcının atanmış cihazlarını göster
+     */
+    public function show($id)
+    {
+        $user = User::findOrFail($id);
+        $devices = LoraDevice::where('user_id', $user->id)->get();
+
+        return view('back.pages.device-assignments.show', compact('user', 'devices'));
+    }
+
+    /**
+     * Cihaz atamasını düzenleme formunu göster
+     */
+    public function edit($id)
+    {
+        $user = User::findOrFail($id);
+
+        // Kullanıcıya atanmış cihazlar
+        $assignedDevices = LoraDevice::where('user_id', $user->id)->get();
+
+        // Atanmamış cihazlar
+        $unassignedDevices = LoraDevice::whereNull('user_id')->get();
+
+        return view('back.pages.device-assignments.edit', compact('user', 'assignedDevices', 'unassignedDevices'));
+    }
+
+    /**
+     * Cihaz atamasını güncelle
+     */
+    public function update(Request $request, $id)
+    {
+        $request->validate([
+            'device_ids' => 'nullable|array',
+            'device_ids.*' => 'exists:lora_devices,id'
+        ]);
+
+        $user = User::findOrFail($id);
+
+        // Önce tüm atanmış cihazları kullanıcıdan kaldır
+        LoraDevice::where('user_id', $user->id)->update(['user_id' => null]);
+
+        // Sonra seçilen cihazları kullanıcıya ata
+        if ($request->has('device_ids') && is_array($request->device_ids)) {
+            foreach ($request->device_ids as $deviceId) {
+                $device = LoraDevice::findOrFail($deviceId);
+                $device->user_id = $user->id;
+                $device->save();
+            }
+        }
+
+        return redirect()->route('admin.device-assignments.index')
+            ->with('success', 'Kullanıcı cihaz atamaları başarıyla güncellendi.');
+    }
+
+    /**
+     * Belirli bir cihaz atamasını kaldır
+     */
+    public function destroy($id)
+    {
+        $device = LoraDevice::findOrFail($id);
+
+        // Cihazın kullanıcı atamasını kaldır
+        $device->user_id = null;
+        $device->save();
+
+        return redirect()->back()
+            ->with('success', 'Cihaz ataması başarıyla kaldırıldı.');
+    }
+
+    /**
+     * Kullanıcı dashboard'u için - kullanıcıya atanmış cihazları göster
+     */
+    public function userDevices()
+    {
+        $user = Auth::user();
+        $devices = LoraDevice::where('user_id', $user->id)->get();
+
+        return view('back.pages.device-assignments.user-devices', compact('devices'));
+    }
+}

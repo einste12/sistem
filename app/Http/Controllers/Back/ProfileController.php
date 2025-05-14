@@ -1,0 +1,53 @@
+<?php
+
+namespace App\Http\Controllers\Back;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Back\ProfileUpdateRequest;
+use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
+
+class ProfileController extends Controller
+{
+    public $user;
+
+    public function __construct(User $user)
+    {
+        $this->user = $user;
+    }
+    public function index()
+    {
+        return view('back.pages.profile.setting');
+    }
+        public function update(Request $request)
+    {
+        $user = Auth::user();
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'current_password' => ['nullable', 'string'],
+            'password' => ['nullable', 'string', 'min:8', 'confirmed'],
+        ]);
+
+        // Update name
+        $user->name = $validated['name'];
+
+        // Update password if provided
+        if ($request->filled('current_password')) {
+            if (!Hash::check($request->current_password, $user->password)) {
+                return back()->withErrors(['current_password' => 'Mevcut şifre doğru değil.']);
+            }
+
+            if ($request->filled('password')) {
+                $user->password = Hash::make($validated['password']);
+            }
+        }
+
+        $user->save();
+
+        return back()->with('success', 'Profil bilgileriniz başarıyla güncellendi.');
+    }
+
+}

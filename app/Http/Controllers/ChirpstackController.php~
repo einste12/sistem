@@ -1,0 +1,260 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Services\ChirpstackService;
+use App\Models\LoraDevice;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+
+class ChirpstackController extends Controller
+{
+    protected $chirpstack;
+
+    public function __construct(ChirpstackService $chirpstack)
+    {
+        $this->chirpstack = $chirpstack;
+    }
+
+    /**
+     * Chirpstack'deki cihazları listele ve veritabanına senkronize et
+     */
+    public function index()
+    {
+        // Önce bağlantıyı test et
+        if (!$this->chirpstack->testConnection()) {
+            Log::error('ChirpStack connection failed');
+            return view('back.pages.chirpstack.index')
+                ->with('error', 'ChirpStack\'e bağlanılamadı')
+                ->with('localDevices', LoraDevice::all());
+        }
+
+        // ChirpStack'ten cihazları al
+        $chirpstackDevices = $this->chirpstack->getAllDevices();
+
+        Log::info('ChirpStack response: ' . json_encode($chirpstackDevices));
+
+        if ($chirpstackDevices === null) {
+            Log::error('No response from ChirpStack API');
+            $localDevices = LoraDevice::all();
+            return view('back.pages.chirpstack.index', compact('localDevices'))
+                ->with('error', 'ChirpStack API\'den veri alınamadı');
+        }
+
+        // ChirpStack v4 response formatına göre güncelleme
+        $devices = [];
+
+        // Farklı response formatlarını kontrol et
+        if (isset($chirpstackDevices['result'])) {
+            $devices = $chirpstackDevices['result'];
+            Log::info('Found devices in result field');
+        } elseif (isset($chirpstackDevices['items'])) {
+            $devices = $chirpstackDevices['items'];
+            Log::info('Found devices in items field');
+        } elseif (is_array($chirpstackDevices) && !empty($chirpstackDevices)) {
+            // Eğer doğrudan cihaz listesi dönüyorsa
+            $firstKey = array_key_first($chirpstackDevices);
+            if (is_numeric($firstKey)) {
+                $devices = $chirpstackDevices;
+                Log::info('Using direct array of devices');
+            }
+        }
+
+        Log::info('Number of devices to sync: ' . count($devices));
+
+        foreach ($devices as $device) {
+            $this->syncDevice($device);
+        }
+
+        $localDevices = LoraDevice::all();
+        return view('back.pages.chirpstack.index', compact('localDevices'))
+            ->with('success', count($devices) . ' cihaz başarıyla senkronize edildi');
+    }
+
+    /**
+     * ChirpStack'ten gelen cihazı veritabanı ile senkronize et
+     */
+    protected function syncDevice($chirpstackDevice)
+    {
+        Log::info('Syncing device: ' . json_encode($chirpstackDevice));
+
+        // API response'daki field isimleri farklı olabilir
+        $devEui = $chirpstackDevice['devEui'] ?? $chirpstackDevice['dev_eui'] ?? null;
+
+        if (!$devEui) {
+            Log::error('Device without DevEUI: ' . json_encode($chirpstackDevice));
+            return;
+        }
+
+        // DevEUI'ye göre cihazı bul veya oluştur
+        $loraDevice = LoraDevice::firstOrNew([
+            'dev_eui' => $devEui
+        ]);
+
+        // ChirpStack'ten gelen verileri maple
+        $loraDevice->name = $chirpstackDevice['name'] ?? 'ChirpStack Device';
+        $loraDevice->description = $chirpstackDevice['description'] ?? null;
+
+        // Device tipini belirle
+        if (isset($chirpstackDevice['deviceProfileName'])) {
+            $loraDevice->device_type = $this->determineDeviceTypeByProfile($chirpstackDevice['deviceProfileName']);
+        } else {
+            $loraDevice->device_type = $this->determineDeviceType($chirpstackDevice);
+        }
+
+        // Application ID'yi kaydet
+        $loraDevice->application_eui = $chirpstackDevice['applicationId'] ?? $chirpstackDevice['application_id'] ?? null;
+
+        // Aktif/Deaktif durumu
+        $loraDevice->is_active = isset($chirpstackDevice['isDisabled']) ? !$chirpstackDevice['isDisabled'] : true;
+
+        // Last seen bilgisini güncelle
+        if (isset($chirpstackDevice['lastSeenAt'])) {
+            $loraDevice->last_seen = \Carbon\Carbon::parse($chirpstackDevice['lastSeenAt']);
+        } elseif (isset($chirpstackDevice['last_seen_at'])) {
+            $loraDevice->last_seen = \Carbon\Carbon::parse($chirpstackDevice['last_seen_at']);
+        }
+
+        // Konfigürasyon bilgilerini güncelle
+        $config = $loraDevice->configuration ?? [];
+        $config['chirpstack_device_profile_id'] = $chirpstackDevice['deviceProfileId'] ?? $chirpstackDevice['device_profile_id'] ?? null;
+        $config['chirpstack_device_profile_name'] = $chirpstackDevice['deviceProfileName'] ?? $chirpstackDevice['device_profile_name'] ?? null;
+        $config['chirpstack_application_id'] = $chirpstackDevice['applicationId'] ?? $chirpstackDevice['application_id'] ?? null;
+
+        // Device status bilgilerini ekle
+        if (isset($chirpstackDevice['deviceStatus'])) {
+            $config['device_status'] = $chirpstackDevice['deviceStatus'];
+        }
+
+        // Tags varsa ekle
+        if (isset($chirpstackDevice['tags'])) {
+            $config['tags'] = $chirpstackDevice['tags'];
+        }
+
+        $loraDevice->configuration = $config;
+
+        $loraDevice->save();
+
+        return $loraDevice;
+    }
+
+    /**
+     * Device profile'a göre cihaz tipini belirle
+     */
+    protected function determineDeviceTypeByProfile($profileName)
+    {
+        $profileName = strtolower($profileName);
+
+        if (str_contains($profileName, 'sensor') || str_contains($profileName, 'temperature') || str_contains($profileName, 'humidity')) {
+            return 'sensor';
+        } elseif (str_contains($profileName, 'actuator') || str_contains($profileName, 'valve') || str_contains($profileName, 'switch')) {
+            return 'actuator';
+        } elseif (str_contains($profileName, 'gateway')) {
+            return 'gateway';
+        }
+
+        return 'endpoint';
+    }
+
+    /**
+     * Cihaz tipini belirle
+     */
+    protected function determineDeviceType($chirpstackDevice)
+    {
+        // Description'a göre cihaz tipini belirle
+        if (isset($chirpstackDevice['description'])) {
+            $description = strtolower($chirpstackDevice['description']);
+            if (str_contains($description, 'sensor')) {
+                return 'sensor';
+            } elseif (str_contains($description, 'actuator')) {
+                return 'actuator';
+            } elseif (str_contains($description, 'gateway')) {
+                return 'gateway';
+            }
+        }
+
+        return 'endpoint'; // Default
+    }
+
+    /**
+     * API'yi test et
+     */
+    public function testApi()
+    {
+        $results = [];
+
+        // Test 1: Connection
+        $results['connection'] = $this->chirpstack->testConnection();
+
+        // Test 2: Get Applications
+        try {
+            $apps = $this->chirpstack->getAllApplications(1, 0);
+            $results['applications'] = $apps;
+            $results['applications_success'] = !is_null($apps);
+        } catch (\Exception $e) {
+            $results['applications_error'] = $e->getMessage();
+        }
+
+        // Test 3: Get Devices
+        try {
+            $devices = $this->chirpstack->getAllDevices(5, 0);
+            $results['devices'] = $devices;
+            $results['devices_success'] = !is_null($devices);
+
+            // Device response yapısını kontrol et
+            if ($devices) {
+                $results['device_response_structure'] = array_keys($devices);
+                if (isset($devices['result']) && is_array($devices['result']) && count($devices['result']) > 0) {
+                    $results['device_fields'] = array_keys($devices['result'][0]);
+                }
+            }
+        } catch (\Exception $e) {
+            $results['devices_error'] = $e->getMessage();
+        }
+
+        // Test 4: Check configuration
+        $results['config'] = [
+            'api_url' => env('CHIRPSTACK_API_URL'),
+            'api_key_exists' => !empty(env('CHIRPSTACK_API_KEY')),
+            'organization_id' => env('CHIRPSTACK_ORGANIZATION_ID')
+        ];
+
+        return response()->json($results, 200, [], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * Downlink mesaj gönder
+     */
+    public function sendDownlink(Request $request, $id)
+    {
+        $request->validate([
+            'data' => 'required|string',
+            'fport' => 'integer|min:1|max:223',
+            'confirmed' => 'boolean'
+        ]);
+
+        $device = LoraDevice::findOrFail($id);
+
+        try {
+            $result = $this->chirpstack->queueDownlink(
+                $device->dev_eui,
+                $request->data,
+                $request->input('fport', 10),
+                $request->input('confirmed', false)
+            );
+
+            if ($result) {
+                return redirect()->route('admin.chirpstack.show', $id)
+                    ->with('success', 'Downlink mesajı başarıyla gönderildi.');
+            } else {
+                return redirect()->route('admin.chirpstack.show', $id)
+                    ->with('error', 'Downlink mesajı gönderilemedi.');
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Downlink error: ' . $e->getMessage());
+            return redirect()->route('admin.chirpstack.show', $id)
+                ->with('error', 'Downlink mesajı gönderilirken bir hata oluştu.');
+        }
+    }
+}

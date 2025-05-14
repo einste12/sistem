@@ -1,0 +1,195 @@
+<?php
+
+namespace App\Services;
+
+use GuzzleHttp\Client;
+use GuzzleHttp\Exception\RequestException;
+use Illuminate\Support\Facades\Log;
+
+class ChirpstackService
+{
+    private $client;
+    private $apiUrl;
+    private $apiKey;
+    private $organizationId;
+
+    public function __construct()
+    {
+        $this->apiUrl = env('CHIRPSTACK_API_URL', 'http://localhost:8080');
+        $this->apiKey = env('CHIRPSTACK_API_KEY', '');
+
+        $this->client = new Client([
+            'base_uri' => $this->apiUrl,
+            'headers' => [
+                'Authorization' => 'Bearer ' . $this->apiKey,
+                'Accept' => 'application/json',
+                'Content-Type' => 'application/json'
+            ],
+            'timeout' => 5,
+            'connect_timeout' => 5,
+            'http_errors' => false
+        ]);
+    }
+
+    /**
+     * Test connection to ChirpStack API
+     */
+    public function testConnection()
+    {
+        try {
+            // ChirpStack v4 için doğru endpoint
+            $response = $this->client->get('/api/internal/profile');
+            return $response->getStatusCode() === 200;
+        } catch (RequestException $e) {
+            Log::error('ChirpStack connection test failed: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Tüm cihazları getir - Protobuf formatına göre güncellendi
+     */
+    public function getAllDevices($limit = 50, $offset = 0, $applicationId = null)
+    {
+        try {
+            $params = [
+                'limit' => $limit,
+                'offset' => $offset
+            ];
+
+            // Application ID varsa ekle
+            if ($applicationId) {
+                $params['applicationId'] = $applicationId;
+            }
+
+            Log::info('Getting devices with params: ' . json_encode($params));
+
+            $response = $this->client->get('/api/devices', [
+                'query' => $params
+            ]);
+
+            $statusCode = $response->getStatusCode();
+            Log::info('Response status code: ' . $statusCode);
+
+            if ($statusCode !== 200) {
+                Log::error('ChirpStack API returned: ' . $statusCode);
+                $body = $response->getBody()->getContents();
+                Log::error('Response body: ' . $body);
+                return null;
+            }
+
+            $body = $response->getBody()->getContents();
+            $data = json_decode($body, true);
+
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                Log::error('JSON decode error: ' . json_last_error_msg());
+                return null;
+            }
+
+            Log::info('ChirpStack devices response structure: ' . json_encode(array_keys($data)));
+
+            return $data;
+        } catch (RequestException $e) {
+            Log::error('ChirpStack API error: ' . $e->getMessage());
+
+            if ($e->hasResponse()) {
+                Log::error('Response body: ' . $e->getResponse()->getBody()->getContents());
+                Log::error('Response headers: ' . json_encode($e->getResponse()->getHeaders()));
+            }
+
+            return null;
+        } catch (\Exception $e) {
+            Log::error('Unexpected error: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
+            return null;
+        }
+    }
+
+    /**
+     * ID ile belirli bir cihazı getir
+     */
+    public function getDevice($deviceEUI)
+    {
+        try {
+            Log::info('Getting device with DevEUI: ' . $deviceEUI);
+
+            $response = $this->client->get("/api/devices/{$deviceEUI}");
+
+            if ($response->getStatusCode() !== 200) {
+                Log::error('ChirpStack API returned: ' . $response->getStatusCode());
+                return null;
+            }
+
+            $body = $response->getBody()->getContents();
+            $data = json_decode($body, true);
+
+            Log::info('Device response structure: ' . json_encode(array_keys($data)));
+
+            return $data;
+        } catch (RequestException $e) {
+            Log::error('ChirpStack API error: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Application'ları listele
+     */
+    public function getAllApplications($limit = 50, $offset = 0)
+    {
+        try {
+            $response = $this->client->get('/api/applications', [
+                'query' => [
+                    'limit' => $limit,
+                    'offset' => $offset
+                ]
+            ]);
+
+            if ($response->getStatusCode() !== 200) {
+                Log::error('Failed to get applications: ' . $response->getStatusCode());
+                return null;
+            }
+
+            $data = json_decode($response->getBody(), true);
+            Log::info('Applications response: ' . json_encode($data));
+
+            return $data;
+        } catch (\Exception $e) {
+            Log::error('Error getting applications: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Downlink mesaj gönder - ChirpStack v4 formatı
+     */
+    public function queueDownlink($deviceEUI, $data, $fPort = 10, $confirmed = false)
+    {
+        try {
+            $payload = [
+                'queueItem' => [
+                    'data' => base64_encode($data),
+                    'fPort' => $fPort,
+                    'confirmed' => $confirmed
+                ]
+            ];
+
+            Log::info('Queueing downlink with payload: ' . json_encode($payload));
+
+            $response = $this->client->post("/api/devices/{$deviceEUI}/queue", [
+                'json' => $payload
+            ]);
+
+            $statusCode = $response->getStatusCode();
+            if ($statusCode !== 200 && $statusCode !== 201) {
+                Log::error('Failed to queue downlink: ' . $statusCode);
+                return null;
+            }
+
+            return json_decode($response->getBody(), true);
+        } catch (RequestException $e) {
+            Log::error('ChirpStack API error: ' . $e->getMessage());
+            return null;
+        }
+    }
+}

@@ -1,0 +1,235 @@
+@extends('back.layouts.master')
+
+@section('styles')
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <style>
+        .form-section {
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+            background-color: #f8f9fc;
+        }
+        .form-section-title {
+            border-bottom: 1px solid #e3e6f0;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+        .device-card {
+            margin-bottom: 15px;
+            transition: all 0.3s;
+        }
+        .device-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        .device-card .card-header {
+            padding: 0.5rem 1rem;
+        }
+        .device-card .card-body {
+            padding: 0.75rem;
+        }
+        .selected-device {
+            border-left: 4px solid #4e73df;
+        }
+    </style>
+@endsection
+
+@section('content')
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card shadow mb-4">
+                    <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                        <h6 class="m-0 font-weight-bold text-primary">Yeni Cihaz Ataması</h6>
+                        <a href="{{ route('admin.device-assignments.index') }}" class="btn btn-secondary btn-sm">
+                            <i class="fas fa-arrow-left"></i> Geri Dön
+                        </a>
+                    </div>
+                    <div class="card-body">
+                        @if ($errors->any())
+                            <div class="alert alert-danger">
+                                <ul class="mb-0">
+                                    @foreach ($errors->all() as $error)
+                                        <li>{{ $error }}</li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                        @endif
+
+                        <form action="{{ route('admin.device-assignments.store') }}" method="POST" id="assignment-form">
+                            @csrf
+
+                            <!-- Kullanıcı Seçimi -->
+                            <div class="form-section">
+                                <div class="form-section-title">Kullanıcı Seçimi</div>
+
+                                <div class="form-group row">
+                                    <label for="user_id" class="col-sm-2 col-form-label">Kullanıcı *</label>
+                                    <div class="col-sm-10">
+                                        <select class="form-control select2" id="user_id" name="user_id" required>
+                                            <option value="">Seçiniz</option>
+                                            @foreach($users as $user)
+                                                <option value="{{ $user->id }}">
+                                                    {{ $user->name }} ({{ $user->email }})
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                        <small class="form-text text-muted">Cihazların atanacağı kullanıcıyı seçin.</small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Cihaz Seçimi -->
+                            <div class="form-section">
+                                <div class="form-section-title">Cihaz Seçimi</div>
+
+                                @if($devices->isNotEmpty())
+                                    <div class="row mb-3">
+                                        <div class="col-12">
+                                            <div class="form-group">
+                                                <input type="text" class="form-control" id="device-search" placeholder="Cihaz ara...">
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="row">
+                                        @foreach($devices as $device)
+                                            <div class="col-md-4 device-item" data-name="{{ strtolower($device->name) }}" data-type="{{ strtolower($device->device_type) }}" data-eui="{{ strtolower($device->dev_eui) }}">
+                                                <div class="card device-card">
+                                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                                        <h6 class="mb-0 text-primary">{{ $device->name }}</h6>
+                                                        <div class="custom-control custom-checkbox">
+                                                            <input type="checkbox" class="custom-control-input device-checkbox" id="device-{{ $device->id }}" name="device_ids[]" value="{{ $device->id }}" {{ request()->has('device_id') && request()->device_id == $device->id ? 'checked' : '' }}>
+                                                            <label class="custom-control-label" for="device-{{ $device->id }}"></label>
+                                                        </div>
+                                                    </div>
+                                                    <div class="card-body">
+                                                        <div class="d-flex justify-content-between mb-2">
+                                                        <span>
+                                                            @if($device->device_type == 'sensor')
+                                                                <span class="badge badge-info">Sensör</span>
+                                                            @elseif($device->device_type == 'actuator')
+                                                                <span class="badge badge-warning">Aktüatör</span>
+                                                            @else
+                                                                <span class="badge badge-secondary">{{ $device->device_type }}</span>
+                                                            @endif
+                                                        </span>
+                                                            <span>
+                                                            @if($device->status == 'online')
+                                                                    <span class="badge badge-success">Çevrimiçi</span>
+                                                                @elseif($device->status == 'offline')
+                                                                    <span class="badge badge-danger">Çevrimdışı</span>
+                                                                @else
+                                                                    <span class="badge badge-warning">Bakımda</span>
+                                                                @endif
+                                                        </span>
+                                                        </div>
+                                                        <div class="small">
+                                                            <strong>Model:</strong> {{ $device->model ?: 'Belirtilmemiş' }}
+                                                        </div>
+                                                        <div class="small">
+                                                            <strong>DEV EUI:</strong> <code>{{ $device->dev_eui }}</code>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        @endforeach
+                                    </div>
+
+                                    <div class="row mt-3 no-results" style="display: none;">
+                                        <div class="col-12">
+                                            <div class="alert alert-warning">
+                                                Arama kriterlerine uygun cihaz bulunamadı.
+                                            </div>
+                                        </div>
+                                    </div>
+                                @else
+                                    <div class="alert alert-warning">
+                                        Atanabilecek cihaz bulunmamaktadır.
+                                    </div>
+                                @endif
+                            </div>
+
+                            @if($devices->isNotEmpty())
+                                <div class="form-group">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-save"></i> Atamaları Kaydet
+                                    </button>
+                                </div>
+                            @endif
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+@endsection
+
+@section('scripts')
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            // Select2 initialize
+            $('.select2').select2({
+                placeholder: "Kullanıcı seçiniz",
+                width: '100%'
+            });
+
+            // Cihaz seçildiğinde stil değişimi
+            $('.device-checkbox').change(function() {
+                if($(this).is(':checked')) {
+                    $(this).closest('.device-card').addClass('selected-device');
+                } else {
+                    $(this).closest('.device-card').removeClass('selected-device');
+                }
+            });
+
+            // Sayfa yüklendiğinde seçili cihazları işaretle
+            $('.device-checkbox').each(function() {
+                if($(this).is(':checked')) {
+                    $(this).closest('.device-card').addClass('selected-device');
+                }
+            });
+
+            // Cihaz arama fonksiyonu
+            $('#device-search').on('keyup', function() {
+                let searchText = $(this).val().toLowerCase();
+                let visibleCount = 0;
+
+                $('.device-item').each(function() {
+                    let deviceName = $(this).data('name');
+                    let deviceType = $(this).data('type');
+                    let deviceEui = $(this).data('eui');
+
+                    if (deviceName.includes(searchText) || deviceType.includes(searchText) || deviceEui.includes(searchText)) {
+                        $(this).show();
+                        visibleCount++;
+                    } else {
+                        $(this).hide();
+                    }
+                });
+
+                // Sonuç yoksa mesaj göster
+                if (visibleCount === 0) {
+                    $('.no-results').show();
+                } else {
+                    $('.no-results').hide();
+                }
+            });
+
+            // Form gönderilmeden önce en az bir cihaz seçili olmalı
+            $('#assignment-form').submit(function(e) {
+                let checkedDevices = $('.device-checkbox:checked').length;
+
+                if (checkedDevices === 0) {
+                    e.preventDefault();
+                    alert('Lütfen en az bir cihaz seçiniz.');
+                    return false;
+                }
+
+                return true;
+            });
+        });
+    </script>
+@endsection

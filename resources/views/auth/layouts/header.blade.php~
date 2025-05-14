@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="tr">
+    <head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" href="{{asset('assets/css/sidebar-menu.css')}}">
+		<link rel="stylesheet" href="{{asset('assets/css/simplebar.css')}}">
+		<link rel="stylesheet" href="{{asset('assets/css/apexcharts.css')}}">
+		<link rel="stylesheet" href="{{asset('assets/css/prism.css')}}">
+		<link rel="stylesheet" href="{{asset('assets/css/rangeslider.css')}}">
+		<link rel="stylesheet" href="{{asset('assets/css/sweetalert.min.css')}}">
+        <link rel="stylesheet" href="{{asset('assets/css/quill.snow.css')}}">
+        <link rel="stylesheet" href="{{asset('assets/css/google-icon.css')}}">
+        <link rel="stylesheet" href="{{asset('assets/css/remixicon.css')}}">
+        <link rel="stylesheet" href="{{asset('assets/css/swiper-bundle.min.css')}}">
+        <link rel="stylesheet" href="{{asset('assets/css/fullcalendar.main.css')}}">
+        <link rel="stylesheet" href="{{asset('assets/css/jsvectormap.min.css')}}">
+        <link rel="stylesheet" href="{{asset('assets/css/lightpick.css')}}">
+		<link rel="stylesheet" href="{{asset('assets/css/style.css')}}">
+		<link rel="icon" type="image/png" href="{{asset('assets/images/favicon.png')}}">
+		<title>OTEL Panel | @yield('title','Giriş Yap')</title>
+    </head>
+    <body class="boxed-size bg-white">
+        <div class="preloader" id="preloader">
+            <div class="preloader">
+                <div class="waviy position-relative">
+                    <span class="d-inline-block">S</span>
+                    <span class="d-inline-block">İ</span>
+                    <span class="d-inline-block">S</span>
+                    <span class="d-inline-block">T</span>
+                    <span class="d-inline-block">E</span>
+                    <span class="d-inline-block">M</span>
+                </div>
+            </div>
+        </div>
+
+
